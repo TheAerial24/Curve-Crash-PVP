@@ -14,16 +14,13 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            /* --- THIS IS THE FIX --- */
+            /* We now align to the top, not the center */
+            justify-content: flex-start;
             min-height: 100vh;
             overflow: hidden;
         }
-        /* H1 style is still here, but the H1 element is gone */
-        h1 {
-            font-weight: 300;
-            letter-spacing: 4px;
-            color: #eee;
-        }
+        
         canvas {
             background-color: #0a0a0a;
             border: 1px solid #333;
@@ -35,7 +32,7 @@
             justify-content: space-between;
             width: 800px;
             padding: 10px;
-            padding-top: 20px; /* Added a little space */
+            padding-top: 20px; /* Add some space at the top */
             box-sizing: border-box;
         }
         .player-info { flex-basis: 45%; }
