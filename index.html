@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Curve-Crash: CTF Echo</title>
+    <title>Curve-Crash: Mode Select Fix</title>
     <style>
         body {
             background-color: #000;
@@ -138,24 +138,32 @@
         const TURN_SPEED = 0.08;
         const BOOST_DURATION = 1 * FPS;
         const BOOST_COOLDOWN = 4 * FPS;
-        const TRAIL_LIFETIME = 8 * FPS;
         const TRAIL_WIDTH = 4;
         const SPAWN_IMMUNITY_TIME = 60;
         
-        // --- CTF CONSTANTS ---
-        const CTF_ROUND_TIME = 120 * FPS; // 2 minutes in frames
+        // --- MODE-SPECIFIC CONSTANTS ---
+        const CTF_ROUND_TIME = 120 * FPS;       // 2 minutes
+        const CTF_RESPAWN_TIME = 2 * FPS;       // 2 seconds
+        const CTF_TRAIL_LIFETIME = 5 * FPS;     // 5 seconds
+        
+        const DM_RESPAWN_TIME = 0;              // Instant respawn (0 seconds)
+        const DM_TRAIL_LIFETIME = 8 * FPS;      // 8 seconds (default)
+
         const FLAG_RADIUS = 10;
         const P1_HOME_X = 80;
         const P2_HOME_X = 640 - 80;
-        const RESPAWN_TIME = 2 * FPS; // 2 seconds respawn delay
+        const FLAG_SPAWN_OFFSET_X = -25; 
+        const FLAG_SPAWN_OFFSET_Y = 15;  
+        
+        let TRAIL_LIFETIME = DM_TRAIL_LIFETIME; // Initial default
 
         const colorPalette = [
             '#00ffff', '#ff00ff', '#00ff00', '#ffff00', '#ff8000',
             '#ffffff', '#ff0000', '#0080ff', '#8000ff', '#008000'
         ];
         
-        // --- GAME MODE LIST (CTF Only) ---
-        const MODES = ['CTF MODE']; 
+        // --- GAME MODE LIST ---
+        const MODES = ['CTF MODE', 'DEATHMATCH']; 
         let p1ModeIndex = 0; 
         let p2ModeIndex = 0; 
         
@@ -170,10 +178,9 @@
         let keys = {};
         let player1, player2;
         
-        // --- CTF Variables ---
-        let gameMode = 'CTF MODE';
-        let p1Flag, p2Flag;
-        let ctfRoundTimer = CTF_ROUND_TIME;
+        let gameMode = MODES[0];
+        let p1Flag = null, p2Flag = null; // Initialize as null
+        let ctfRoundTimer = 0;
         let p1RoundScore = 0;
         let p2RoundScore = 0;
         
@@ -183,7 +190,6 @@
             { name: "The Hourglass", obstacles: [ { x: 0, y: 0, width: 220, height: 100 }, { x: 420, y: 0, width: 220, height: 100 }, { x: 0, y: 300, width: 220, height: 100 }, { x: 420, y: 300, width: 220, height: 100 } ], wrapWalls: false },
             { name: "The Open", obstacles: [], wrapWalls: true }
         ];
-        // Set initial arena index to 'The Pillars' (index 1)
         let currentArenaIndex = 1; 
         let currentArena = arenas[currentArenaIndex];
 
@@ -207,14 +213,14 @@
 
         canvas.addEventListener('click', () => {
             if (gameState === 'start') {
-                gameState = 'modeSelect';
+                gameState = 'modeSelect'; // Back to mode select
                 updateModeMessage();
             } else if (gameState === 'gameOver') {
                 initGame();
             }
         });
 
-        // --- 3. PLAYER CLASS (Updated for Respawn) ---
+        // --- 3. PLAYER CLASS (Updated for Dynamic Rules) ---
         class Player {
             constructor(x, y, angle, color, controls, isP1, homeX) {
                 this.x = x;
@@ -232,13 +238,12 @@
                 this.immunityTimer = 0;
                 this.isP1 = isP1;
                 this.carryingFlag = null;
-                this.respawnTimer = 0; // NEW: Respawn timer
+                this.respawnTimer = 0; 
                 this.homeX = homeX;
             }
 
             update() {
                 if (this.isDead) {
-                    // NEW: Handle respawn timer
                     this.respawnTimer--;
                     if (this.respawnTimer <= 0) {
                         this.respawn();
@@ -278,7 +283,10 @@
                 this.checkObstacleCollision();
                 this.checkTrailCollision();
                 
-                this.checkFlagInteraction();
+                // Only run flag interaction in CTF mode
+                if (gameMode === 'CTF MODE') {
+                    this.checkFlagInteraction();
+                }
                 
                 if (this.carryingFlag) {
                     this.carryingFlag.x = this.x;
@@ -287,6 +295,7 @@
             }
             
             checkFlagInteraction() {
+                if (!p1Flag || !p2Flag) return; // Safety check
                 const homeFlag = this.isP1 ? p1Flag : p2Flag;
                 const enemyFlag = this.isP1 ? p2Flag : p1Flag;
                 
@@ -309,6 +318,7 @@
                         this.isP1 ? p2Flag.reset() : p1Flag.reset();
                         
                         showMessage(`${this.isP1 ? 'PLAYER 1' : 'PLAYER 2'} SCORED! (Score: ${this.isP1 ? p1RoundScore : p2RoundScore})`);
+                        updateScoreUI();
                         setTimeout(hideMessage, 1000);
                     }
                 }
@@ -373,10 +383,19 @@
             }
 
             die() {
-                if (this.isDead) return; // Prevent double death
+                if (this.isDead) return;
                 this.isDead = true;
-                this.respawnTimer = RESPAWN_TIME; // Start 2-second respawn timer
                 
+                // Use CTF respawn time if in CTF, otherwise instant (DM)
+                this.respawnTimer = (gameMode === 'CTF MODE') ? CTF_RESPAWN_TIME : DM_RESPAWN_TIME;
+
+                // Only increment score in Deathmatch (DM)
+                if (gameMode === 'DEATHMATCH') {
+                    // Award score to the *other* player if not CTF
+                    this.isP1 ? player2.score++ : player1.score++;
+                    updateScoreUI();
+                }
+
                 for (let i = 0; i < 30; i++) {
                     particles.push(new Particle(this.x, this.y, this.color));
                 }
@@ -389,7 +408,6 @@
                 }
             }
             
-            // NEW: Respawn function
             respawn() {
                 this.isDead = false;
                 this.respawnTimer = 0;
@@ -404,12 +422,10 @@
                 if (this.isDead) return;
                 
                 let draw = true;
-                // Flashing for immunity
                 if (this.immunityTimer > 0 && Math.floor(this.immunityTimer / 6) % 2 === 0) {
                     draw = false;
                 }
                 
-                // Shadow for flag carrier
                 if (this.carryingFlag) {
                     ctx.shadowColor = this.color;
                     ctx.shadowBlur = 20;
@@ -446,13 +462,22 @@
             }
         }
         
+        // --- 4. FLAG & TRAIL CLASSES (Unchanged, relies on global TRAIL_LIFETIME) ---
         class Flag {
-            // ... (Flag class remains the same)
             constructor(x, y, color, isP1Flag) {
-                this.initialX = x;
-                this.initialY = y;
-                this.x = x;
-                this.y = y;
+                let initialX, initialY;
+                if (isP1Flag) {
+                    initialX = x + FLAG_SPAWN_OFFSET_X; 
+                    initialY = y + FLAG_SPAWN_OFFSET_Y;
+                } else {
+                    initialX = x - FLAG_SPAWN_OFFSET_X;
+                    initialY = y + FLAG_SPAWN_OFFSET_Y;
+                }
+                
+                this.initialX = initialX;
+                this.initialY = initialY;
+                this.x = initialX;
+                this.y = initialY;
                 this.color = color;
                 this.isP1 = isP1Flag; 
                 this.isCarried = false;
@@ -505,12 +530,10 @@
         }
         
         class TrailSegment {
-            // ... (TrailSegment class remains the same)
             constructor(x, y, color) {
                 this.x = x;
                 this.y = y;
-                this.color = color;
-                this.lifetime = TRAIL_LIFETIME;
+                this.lifetime = TRAIL_LIFETIME; 
             }
             update() { 
                 this.lifetime--; 
@@ -527,7 +550,6 @@
         }
 
         class Particle {
-            // ... (Particle class remains the same)
             constructor(x, y, color) {
                 this.x = x;
                 this.y = y;
@@ -553,18 +575,34 @@
             }
         }
         
-        // --- 4. GAME MODE SELECTION LOGIC (Simplified for CTF Only) ---
+        // --- 5. GAME MODE SELECTION LOGIC (Reinstated) ---
 
         function handleModeKeys(key) {
-            // Since there's only one mode, clicking ready immediately proceeds
+            // P1 Mode Selection (A/D)
+            if (key === 'a' && !p1Ready) {
+                p1ModeIndex = (p1ModeIndex - 1 + MODES.length) % MODES.length;
+            }
+            if (key === 'd' && !p1Ready) {
+                p1ModeIndex = (p1ModeIndex + 1) % MODES.length;
+            }
+            // P1 Ready (W/S)
             if (key === 'w') { p1Ready = true; }
             if (key === 's') { p1Ready = false; }
+
+            // P2 Mode Selection (Left/Right)
+            if (key === 'ArrowLeft' && !p2Ready) {
+                p2ModeIndex = (p2ModeIndex - 1 + MODES.length) % MODES.length;
+            }
+            if (key === 'ArrowRight' && !p2Ready) {
+                p2ModeIndex = (p2ModeIndex + 1) % MODES.length;
+            }
+            // P2 Ready (Up/Down)
             if (key === 'ArrowUp') { p2Ready = true; }
             if (key === 'ArrowDown') { p2Ready = false; }
 
             updateModeMessage();
 
-            if (p1Ready && p2Ready) {
+            if (p1Ready && p2Ready && p1ModeIndex === p2ModeIndex) {
                 gameMode = MODES[p1ModeIndex];
                 gameState = 'colorSelect';
                 p1Ready = false; 
@@ -574,40 +612,41 @@
         }
         
         function updateModeMessage() {
-            let p1Text = p1Ready ? "P1: READY" : `P1: CTF MODE`;
-            let p2Text = p2Ready ? "P2: READY" : `P2: CTF MODE`;
-            showMessage(`SELECT GAME MODE\n${p1Text} | ${p2Text}\n(W/UP to Ready)`);
+            let p1Text = p1Ready ? "P1: READY" : `P1: ${MODES[p1ModeIndex]}`;
+            let p2Text = p2Ready ? "P2: READY" : `P2: ${MODES[p2ModeIndex]}`;
+            let message = "SELECT GAME MODE\n" + p1Text + " | " + p2Text + "\n(A/D or L/R to Change, W/UP to Ready)";
+            
+            if (p1Ready && p2Ready && p1ModeIndex !== p2ModeIndex) {
+                message += "\nMODE MISMATCH!";
+            }
+            showMessage(message);
+            arenaNameEl.textContent = `Current Arena: ${currentArena.name}`;
         }
 
-        // --- 5. GAME LOGIC & STATE ---
+
+        // --- 6. COLOR & GAME START LOGIC ---
         
         function handleColorKeys(key) {
+            // P1 Color Selection
             if (key === 'a' && !p1Ready) {
                 p1ColorIndex = (p1ColorIndex - 1 + colorPalette.length) % colorPalette.length;
-                if (p1ColorIndex === p2ColorIndex) {
-                    p1ColorIndex = (p1ColorIndex - 1 + colorPalette.length) % colorPalette.length;
-                }
+                if (p1ColorIndex === p2ColorIndex) { p1ColorIndex = (p1ColorIndex - 1 + colorPalette.length) % colorPalette.length; }
             }
             if (key === 'd' && !p1Ready) {
                 p1ColorIndex = (p1ColorIndex + 1) % colorPalette.length;
-                if (p1ColorIndex === p2ColorIndex) {
-                    p1ColorIndex = (p1ColorIndex + 1) % colorPalette.length;
-                }
+                if (p1ColorIndex === p2ColorIndex) { p1ColorIndex = (p1ColorIndex + 1) % colorPalette.length; }
             }
             if (key === 'w') { p1Ready = true; }
             if (key === 's') { p1Ready = false; }
 
+            // P2 Color Selection
             if (key === 'ArrowLeft' && !p2Ready) {
                 p2ColorIndex = (p2ColorIndex - 1 + colorPalette.length) % colorPalette.length;
-                if (p2ColorIndex === p1ColorIndex) {
-                    p2ColorIndex = (p2ColorIndex - 1 + colorPalette.length) % colorPalette.length;
-                }
+                if (p2ColorIndex === p1ColorIndex) { p2ColorIndex = (p2ColorIndex - 1 + colorPalette.length) % colorPalette.length; }
             }
             if (key === 'ArrowRight' && !p2Ready) {
                 p2ColorIndex = (p2ColorIndex + 1) % colorPalette.length;
-                if (p2ColorIndex === p1ColorIndex) {
-                    p2ColorIndex = (p2ColorIndex + 1) % colorPalette.length;
-                }
+                if (p2ColorIndex === p1ColorIndex) { p2ColorIndex = (p2ColorIndex + 1) % colorPalette.length; }
             }
             if (key === 'ArrowUp') { p2Ready = true; }
             if (key === 'ArrowDown') { p2Ready = false; }
@@ -632,56 +671,67 @@
         function updateReadyMessage() {
             let p1Text = p1Ready ? "P1: READY" : "P1: <A/D> Select";
             let p2Text = p2Ready ? "P2: READY" : "P2: <L/R> Select";
-            showMessage(`CHOOSE COLOR\n${p1Text} | ${p2Text}\n(W/UP to Ready, S/DOWN to Unready)`);
+            showMessage(`${gameMode} - CHOOSE COLOR\n${p1Text} | ${p2Text}\n(W/UP to Ready, S/DOWN to Unready)`);
         }
 
         function proceedToStart() {
-            // Update player colors based on selection
             player1.color = colorPalette[p1ColorIndex];
             player2.color = colorPalette[p2ColorIndex];
-            // Update player class to set colors
-            player1.respawn(); // Reset player position with new color
+            player1.respawn();
             player2.respawn();
             startGame(); 
         }
 
         function initGame() {
-            // Set up players using P1_HOME_X/P2_HOME_X
             player1 = new Player(P1_HOME_X, canvas.height / 2, 0, colorPalette[p1ColorIndex], { up: 'w', down: 's', left: 'a', right: 'd' }, true, P1_HOME_X);
             player2 = new Player(P2_HOME_X, canvas.height / 2, Math.PI, colorPalette[p2ColorIndex], { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, false, P2_HOME_X);
             
-            p1RoundScore = 0; // Reset overall scores
+            player1.score = 0;
+            player2.score = 0;
+            p1RoundScore = 0;
             p2RoundScore = 0;
             updateScoreUI();
             
-            // Set fixed CTF setup
-            currentArenaIndex = 1; // "The Pillars"
+            currentArenaIndex = 1; // Default to The Pillars for CTF (though we'll only use its properties if selected)
             currentArena = arenas[currentArenaIndex];
-            gameMode = 'CTF MODE';
-
-            gameState = 'modeSelect'; 
+            
+            gameState = 'start'; 
             p1Ready = false;
             p2Ready = false;
-            updateModeMessage();
+            p1ModeIndex = 0;
+            p2ModeIndex = 0;
+            showMessage("WELCOME TO CURVE-CRASH\nClick to Select Game Mode"); 
             arenaNameEl.textContent = "";
         }
         
         function startGame() {
-            gameModeEl.textContent = gameMode;
-            
             trails = [];
             particles = [];
-            
-            ctfRoundTimer = CTF_ROUND_TIME;
-            
-            p1Flag = new Flag(P1_HOME_X, canvas.height / 2, player1.color, true);
-            p2Flag = new Flag(P2_HOME_X, canvas.height / 2, player2.color, false);
-            ctfTimerEl.style.display = 'block';
+            p1Flag = null; 
+            p2Flag = null; 
+            ctfTimerEl.style.display = 'none';
 
+            // --- MODE-SPECIFIC SETUP ---
+            if (gameMode === 'CTF MODE') {
+                TRAIL_LIFETIME = CTF_TRAIL_LIFETIME; // 5 seconds
+                ctfRoundTimer = CTF_ROUND_TIME;
+                p1Flag = new Flag(P1_HOME_X, canvas.height / 2, player1.color, true);
+                p2Flag = new Flag(P2_HOME_X, canvas.height / 2, player2.color, false);
+                ctfTimerEl.style.display = 'block';
+                player1.score = 0; // CTF uses RoundScore, reset DM score
+                player2.score = 0;
+            } else { // DEATHMATCH
+                TRAIL_LIFETIME = DM_TRAIL_LIFETIME; // 8 seconds
+                // DM does not use the CTF timer or flags
+                p1RoundScore = 0; // DM does not use RoundScore, reset CTF score
+                p2RoundScore = 0;
+            }
+            updateScoreUI();
+            
+            gameModeEl.textContent = gameMode;
             currentArena = arenas[currentArenaIndex];
             arenaNameEl.textContent = currentArena.name;
             
-            // Initial spawn
             player1.respawn();
             player2.respawn();
             
@@ -709,15 +759,17 @@
             }, 1000);
         }
 
-        // --- UPDATED: handleRoundOver now handles end of game for CTF timer ---
         function handleGameOverByTimer() {
             gameState = 'gameOver';
             
+            let score1 = (gameMode === 'CTF MODE') ? p1RoundScore : player1.score;
+            let score2 = (gameMode === 'CTF MODE') ? p2RoundScore : player2.score;
+
             let message = '';
-            if (p1RoundScore > p2RoundScore) {
-                message = `PLAYER 1 WINS! (${p1RoundScore}-${p2RoundScore})`;
-            } else if (p2RoundScore > p1RoundScore) {
-                message = `PLAYER 2 WINS! (${p1RoundScore}-${p2RoundScore})`;
+            if (score1 > score2) {
+                message = `PLAYER 1 WINS! (${score1}-${score2})`;
+            } else if (score2 > score1) {
+                message = `PLAYER 2 WINS! (${score1}-${score2})`;
             } else {
                 message = 'GAME TIME UP: TIE!';
             }
@@ -727,8 +779,14 @@
         }
         
         function updateScoreUI() {
-            p1ScoreEl.textContent = p1RoundScore; // Display round score as main score
-            p2ScoreEl.textContent = p2RoundScore;
+            // Display score based on current mode
+            if (gameMode === 'CTF MODE') {
+                p1ScoreEl.textContent = p1RoundScore;
+                p2ScoreEl.textContent = p2RoundScore;
+            } else { // DEATHMATCH
+                p1ScoreEl.textContent = player1.score;
+                p2ScoreEl.textContent = player2.score;
+            }
         }
 
         function showMessage(text) {
@@ -750,7 +808,7 @@
             ctx.shadowBlur = 0;
         }
 
-        // --- 6. MAIN GAME LOOP ---
+        // --- 7. MAIN GAME LOOP ---
         function gameLoop() {
             ctx.fillStyle = 'rgba(10, 10, 10, 0.8)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -761,19 +819,19 @@
                 player1.update();
                 player2.update();
 
-                // CTF Timer Logic
-                ctfRoundTimer--;
-                const seconds = Math.ceil(ctfRoundTimer / 60);
-                const minutes = Math.floor(seconds / 60);
-                const displaySeconds = seconds % 60;
-                ctfTimerEl.textContent = `TIME: ${minutes}:${displaySeconds < 10 ? '0' : ''}${displaySeconds} (P1: ${p1RoundScore} | P2: ${p2RoundScore})`;
+                if (gameMode === 'CTF MODE') {
+                    ctfRoundTimer--;
+                    const seconds = Math.ceil(ctfRoundTimer / 60);
+                    const minutes = Math.floor(seconds / 60);
+                    const displaySeconds = seconds % 60;
+                    ctfTimerEl.textContent = `TIME: ${minutes}:${displaySeconds < 10 ? '0' : ''}${displaySeconds} (P1: ${p1RoundScore} | P2: ${p2RoundScore})`;
 
-                if (ctfRoundTimer <= 0) {
-                    handleGameOverByTimer();
+                    if (ctfRoundTimer <= 0) {
+                        handleGameOverByTimer();
+                    }
                 }
             }
             
-            // Draw Trails, Particles, and Players
             for (let i = trails.length - 1; i >= 0; i--) {
                 trails[i].update();
                 if (trails[i].lifetime <= 0) { trails.splice(i, 1); }
@@ -785,8 +843,10 @@
 
             for (let segment of trails) { segment.draw(); }
             
-            if (p1Flag) p1Flag.draw();
-            if (p2Flag) p2Flag.draw();
+            if (gameMode === 'CTF MODE' && p1Flag && p2Flag) {
+                p1Flag.draw();
+                p2Flag.draw();
+            }
             
             if (gameState === 'playing' || gameState === 'countdown' || gameState === 'colorSelect' || gameState === 'modeSelect') {
                 player1.draw();
@@ -800,7 +860,7 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // --- 7. START THE GAME ---
+        // --- 8. START THE GAME ---
         initGame();
         gameLoop();
     </script>
