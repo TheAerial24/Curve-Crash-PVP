@@ -14,7 +14,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            /* Align to the top of the screen */
             justify-content: flex-start;
             min-height: 100vh;
             overflow: hidden;
@@ -102,6 +101,7 @@
         const TRAIL_LIFETIME = 8 * 60;
         const TRAIL_WIDTH = 4;
         const WIN_SCORE = 7;
+        const SPAWN_IMMUNITY_TIME = 60; // 1 second * 60fps
 
         let gameState = 'start';
         let trails = [];
@@ -140,16 +140,26 @@
                 this.controls = controls;
                 this.speed = PLAYER_SPEED;
                 this.isBoosting = false;
-        
                 this.boostTimer = 0;
                 this.boostCooldownTimer = BOOST_COOLDOWN;
                 this.isBraking = false;
                 this.isDead = false;
                 this.score = 0;
+                
+                // --- NEW ---
+                this.immunityTimer = 0;
             }
 
             update() {
                 if (this.isDead) return;
+
+                // --- NEW ---
+                // Count down immunity timer
+                if (this.immunityTimer > 0) {
+                    this.immunityTimer--;
+                }
+
+                // Handle Input
                 if (keys[this.controls.left]) { this.angle -= TURN_SPEED; }
                 if (keys[this.controls.right]) { this.angle += TURN_SPEED; }
                 if (keys[this.controls.up] && this.boostCooldownTimer >= BOOST_COOLDOWN) {
@@ -168,46 +178,53 @@
                 else if (this.isBraking) { this.speed = BRAKE_SPEED; }
                 else { this.speed = PLAYER_SPEED; }
                 
-                // --- MOVEMENT & COLLISION LOGIC ---
-                // 1. Add trail at current position *before* moving
-                trails.push(new TrailSegment(this.x, this.y, this.color));
-
-                // 2. Move the player
                 const moveX = Math.cos(this.angle) * this.speed;
                 const moveY = Math.sin(this.angle) * this.speed;
+                
+                // Add trail *before* moving
+                trails.push(new TrailSegment(this.x, this.y, this.color));
+
                 this.x += moveX;
                 this.y += moveY;
 
-                // 3. Check for collisions
+                // Check for collisions
                 this.checkWallCollision();
                 this.checkTrailCollision();
             }
 
             checkWallCollision() {
+                // --- NEW ---
+                // If immune, do nothing
+                if (this.immunityTimer > 0) return;
+
                 if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
                     this.die();
                 }
             }
 
-            // --- 
-            // --- THIS FUNCTION IS NOW FIXED (AGAIN) ---
-            // --- 
             checkTrailCollision() {
+                // --- NEW ---
+                // If immune, do nothing
+                if (this.immunityTimer > 0) return;
+
                 const playerRadius = PLAYER_SIZE / 2;
                 const trailRadius = TRAIL_WIDTH / 2;
-                const collisionThreshold = playerRadius + trailRadius; // 5 + 2 = 7
+                const collisionThreshold = playerRadius + trailRadius; // 7
 
-                // --- THIS IS THE NEW LOGIC ---
-                // Loop through all trail segments *except the last one*.
-                // The last one (trails.length - 1) is the one we just spawned.
-                // This makes us collide with *everything* else, including our own trail.
-                for (let i = 0; i < trails.length - 1; i++) {
-                    const segment = trails[i];
+                for (let segment of trails) {
+                    
+                    // --- THIS IS THE "TAIL IMMUNITY" FIX ---
+                    // If the segment is OURS and it's NEWER than 15 frames, skip it.
+                    // This prevents us from dying on our own tail.
+                    if (segment.color === this.color && segment.lifetime > TRAIL_LIFETIME - 15) {
+                        continue;
+                    }
                     
                     const dx = this.x - segment.x;
                     const dy = this.y - segment.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
+                    // If we're close enough to *any other* segment, we die.
                     if (distance < collisionThreshold) { 
                         this.die();
                         break;
@@ -225,6 +242,13 @@
 
             draw() {
                 if (this.isDead) return;
+
+                // --- NEW ---
+                // This makes the player blink while immune
+                if (this.immunityTimer > 0 && Math.floor(this.immunityTimer / 6) % 2 === 0) {
+                    return; // Skip drawing this frame to create a blink
+                }
+
                 ctx.save();
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.angle);
@@ -314,16 +338,21 @@
         function resetRound() {
             trails = [];
             particles = [];
+            
             player1.x = 100;
             player1.y = canvas.height / 2;
             player1.angle = 0;
             player1.isDead = false;
             player1.boostCooldownTimer = BOOST_COOLDOWN;
+            player1.immunityTimer = SPAWN_IMMUNITY_TIME; // --- NEW ---
+
             player2.x = canvas.width - 100;
             player2.y = canvas.height / 2;
             player2.angle = Math.PI;
             player2.isDead = false;
             player2.boostCooldownTimer = BOOST_COOLDOWN;
+            player2.immunityTimer = SPAWN_IMMUNITY_TIME; // --- NEW ---
+            
             startCountdown();
         }
 
