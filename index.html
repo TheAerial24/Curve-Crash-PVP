@@ -373,7 +373,8 @@
             updateScoreUI();
 
             gameState = 'start';
-            showMessage(`Press any key to start`);
+            // --- FIX 1 ---
+            showMessage(`Press ENTER to start`);
         }
         
         function resetRound() {
@@ -437,7 +438,8 @@
             if (player1.score >= WIN_SCORE || player2.score >= WIN_SCORE) {
                 gameState = 'gameOver';
                 let winner = player1.score > player2.score ? 'PLAYER 1' : 'PLAYER 2';
-                showMessage(`${winner} WINS!\n(Press any key)`);
+                // --- FIX 2 ---
+                showMessage(`${winner} WINS!\n(Press ENTER)`);
             } else {
                 // Start next round
                 setTimeout(resetRound, 3000);
@@ -466,15 +468,15 @@
             ctx.fillStyle = 'rgba(10, 10, 10, 0.8)'; // Faded clear
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            if (gameState === 'start' && Object.keys(keys).length > 0) {
+            // --- FIX 3 --- (Replaced the "any key" logic)
+            if (gameState === 'start' && keys['Enter']) {
+                keys['Enter'] = false; // Consume the keypress
                 startCountdown();
             }
             
-            if (gameState === 'gameOver' && Object.keys(keys).length > 0) {
-                // A simple way to restart. A better game would have a 'click'
-                // This is a hack, it will re-trigger on keyup. 
-                // A proper 'any key' listener is more complex.
-                // For simplicity, we'll just re-init.
+            // --- FIX 4 --- (Replaced the "any key" logic)
+            if (gameState === 'gameOver' && keys['Enter']) {
+                keys['Enter'] = false; // Consume the keypress
                 initGame();
                 return; // Exit loop, restart on next frame
             }
