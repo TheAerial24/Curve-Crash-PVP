@@ -14,8 +14,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            /* --- THIS IS THE FIX --- */
-            /* We now align to the top, not the center */
+            /* Align to the top of the screen */
             justify-content: flex-start;
             min-height: 100vh;
             overflow: hidden;
@@ -32,7 +31,7 @@
             justify-content: space-between;
             width: 800px;
             padding: 10px;
-            padding-top: 20px; /* Add some space at the top */
+            padding-top: 20px;
             box-sizing: border-box;
         }
         .player-info { flex-basis: 45%; }
@@ -67,6 +66,7 @@
     </style>
 </head>
 <body>
+
     <div id="ui">
         <div id="p1-info" class="player-info">
             <div class="score" id="p1-score">0</div>
@@ -140,6 +140,7 @@
                 this.controls = controls;
                 this.speed = PLAYER_SPEED;
                 this.isBoosting = false;
+        
                 this.boostTimer = 0;
                 this.boostCooldownTimer = BOOST_COOLDOWN;
                 this.isBraking = false;
@@ -167,11 +168,17 @@
                 else if (this.isBraking) { this.speed = BRAKE_SPEED; }
                 else { this.speed = PLAYER_SPEED; }
                 
+                // --- MOVEMENT & COLLISION LOGIC ---
+                // 1. Add trail at current position *before* moving
+                trails.push(new TrailSegment(this.x, this.y, this.color));
+
+                // 2. Move the player
                 const moveX = Math.cos(this.angle) * this.speed;
                 const moveY = Math.sin(this.angle) * this.speed;
-                trails.push(new TrailSegment(this.x, this.y, this.color));
                 this.x += moveX;
                 this.y += moveY;
+
+                // 3. Check for collisions
                 this.checkWallCollision();
                 this.checkTrailCollision();
             }
@@ -182,13 +189,26 @@
                 }
             }
 
+            // --- 
+            // --- THIS FUNCTION IS NOW FIXED (AGAIN) ---
+            // --- 
             checkTrailCollision() {
-                for (let segment of trails) {
-                    if (segment.lifetime > TRAIL_LIFETIME - 15) continue;
+                const playerRadius = PLAYER_SIZE / 2;
+                const trailRadius = TRAIL_WIDTH / 2;
+                const collisionThreshold = playerRadius + trailRadius; // 5 + 2 = 7
+
+                // --- THIS IS THE NEW LOGIC ---
+                // Loop through all trail segments *except the last one*.
+                // The last one (trails.length - 1) is the one we just spawned.
+                // This makes us collide with *everything* else, including our own trail.
+                for (let i = 0; i < trails.length - 1; i++) {
+                    const segment = trails[i];
+                    
                     const dx = this.x - segment.x;
                     const dy = this.y - segment.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance < TRAIL_WIDTH / 2) {
+
+                    if (distance < collisionThreshold) { 
                         this.die();
                         break;
                     }
