@@ -35,8 +35,6 @@
         }
         .player-info { 
             flex-basis: 45%; 
-            /* --- NEW --- */
-            /* We now use transitions for smooth color changes */
             transition: color 0.2s ease;
         }
         #p1-info { color: #00ffff; text-align: left; }
@@ -52,7 +50,6 @@
         .boost-bar {
             height: 100%;
             width: 100%;
-            /* --- NEW --- */
             transition: width 0.1s linear, background-color 0.2s ease;
         }
         #p1-boost-bar { background-color: #00ffff; }
@@ -62,7 +59,7 @@
             top: 40%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 2.5em; /* Smaller to fit instructions */
+            font-size: 2.5em;
             text-align: center;
             line-height: 1.4;
             text-shadow: 0 0 10px #fff;
@@ -97,8 +94,6 @@
         const p1BoostEl = document.getElementById('p1-boost-bar');
         const p2BoostEl = document.getElementById('p2-boost-bar');
         const messageEl = document.getElementById('message');
-        
-        // --- NEW: UI Elements for Color ---
         const p1InfoEl = document.getElementById('p1-info');
         const p2InfoEl = document.getElementById('p2-info');
 
@@ -114,29 +109,29 @@
         const WIN_SCORE = 7;
         const SPAWN_IMMUNITY_TIME = 60;
 
-        // --- NEW: Color Selection ---
+        // --- NEW: Sudden Death ---
+        const SUDDEN_DEATH_TIME = 45 * 60; // 45 seconds
+
+        // --- Color Selection ---
         const colorPalette = [
-            '#00ffff', // 0: Cyan
-            '#ff00ff', // 1: Magenta
-            '#00ff00', // 2: Lime
-            '#ffff00', // 3: Yellow
-            '#ff8000', // 4: Orange
-            '#ffffff', // 5: White
-            '#ff0000', // 6: Red
-            '#0080ff', // 7: Blue
-            '#8000ff', // 8: Purple
-            '#008000'  // 9: Green
+            '#00ffff', '#ff00ff', '#00ff00', '#ffff00', '#ff8000',
+            '#ffffff', '#ff0000', '#0080ff', '#8000ff', '#008000'
         ];
         let p1ColorIndex = 0;
         let p2ColorIndex = 1;
         let p1Ready = false;
         let p2Ready = false;
 
+        // --- Game State ---
         let gameState = 'start';
         let trails = [];
         let particles = [];
         let keys = {};
         let player1, player2;
+        
+        // --- NEW: Sudden Death State ---
+        let roundTimer = 0;
+        let isSuddenDeath = false;
 
         // --- 2. INPUT HANDLING ---
 
@@ -144,12 +139,9 @@
             if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "a", "d", "w", "s"].includes(e.key)) {
                 e.preventDefault();
             }
-
-            // --- NEW: Route input based on gameState ---
             if (gameState === 'colorSelect') {
                 handleColorKeys(e.key);
             }
-
             keys[e.key] = true;
         });
 
@@ -158,7 +150,6 @@
         });
 
         canvas.addEventListener('click', () => {
-            // Only 'start' state can be clicked
             if (gameState === 'start') {
                 startCountdown();
             } else if (gameState === 'gameOver') {
@@ -172,7 +163,7 @@
                 this.x = x;
                 this.y = y;
                 this.angle = angle;
-                this.color = color; // This will be set from the color choice!
+                this.color = color;
                 this.controls = controls;
                 this.speed = PLAYER_SPEED;
                 this.isBoosting = false;
@@ -287,7 +278,11 @@
                 this.color = color;
                 this.lifetime = TRAIL_LIFETIME;
             }
-            update() { this.lifetime--; }
+            update() { 
+                // --- NEW: Sudden Death stops trails from fading ---
+                if (isSuddenDeath) return;
+                this.lifetime--; 
+            }
             draw() {
                 const alpha = this.lifetime / TRAIL_LIFETIME;
                 ctx.fillStyle = this.color;
@@ -328,12 +323,9 @@
 
         // --- 5. GAME LOGIC & STATE ---
 
-        // --- NEW: Color selection functions ---
         function handleColorKeys(key) {
-            // Player 1 Controls
             if (key === 'a' && !p1Ready) {
                 p1ColorIndex = (p1ColorIndex - 1 + colorPalette.length) % colorPalette.length;
-                // Avoid picking the same color
                 if (p1ColorIndex === p2ColorIndex) {
                     p1ColorIndex = (p1ColorIndex - 1 + colorPalette.length) % colorPalette.length;
                 }
@@ -347,7 +339,6 @@
             if (key === 'w') { p1Ready = true; }
             if (key === 's') { p1Ready = false; }
 
-            // Player 2 Controls
             if (key === 'ArrowLeft' && !p2Ready) {
                 p2ColorIndex = (p2ColorIndex - 1 + colorPalette.length) % colorPalette.length;
                 if (p2ColorIndex === p1ColorIndex) {
@@ -374,7 +365,6 @@
         function updateColorUI() {
             const p1Color = colorPalette[p1ColorIndex];
             const p2Color = colorPalette[p2ColorIndex];
-
             p1InfoEl.style.color = p1Color;
             p2InfoEl.style.color = p2Color;
             p1BoostEl.style.backgroundColor = p1Color;
@@ -388,17 +378,13 @@
         }
 
         function proceedToStart() {
-            // Lock in the colors
             player1.color = colorPalette[p1ColorIndex];
             player2.color = colorPalette[p2ColorIndex];
-
-            // Move to next state
             gameState = 'start';
             showMessage('Click to Start');
         }
 
         function initGame() {
-            // Create players with default colors (will be set in color select)
             player1 = new Player(100, canvas.height / 2, 0, colorPalette[p1ColorIndex], {
                 up: 'w', down: 's', left: 'a', right: 'd'
             });
@@ -410,7 +396,6 @@
             player2.score = 0;
             updateScoreUI();
             
-            // --- NEW: Start at color select screen ---
             gameState = 'colorSelect';
             p1Ready = false;
             p2Ready = false;
@@ -421,6 +406,10 @@
         function resetRound() {
             trails = [];
             particles = [];
+
+            // --- NEW: Reset Sudden Death state ---
+            roundTimer = 0;
+            isSuddenDeath = false;
             
             player1.x = 100;
             player1.y = canvas.height / 2;
@@ -481,7 +470,7 @@
         
         function updateScoreUI() {
             p1ScoreEl.textContent = player1.score;
-            p2ScoreEl.textContent = player2.score;
+            p2ScoreEl.textContent = p2ScoreEl.score;
         }
 
         function showMessage(text) {
@@ -501,12 +490,22 @@
             if (gameState === 'playing') {
                 player1.update();
                 player2.update();
+
+                // --- NEW: Sudden Death Timer ---
+                if (!isSuddenDeath) { 
+                    roundTimer++;
+                    if (roundTimer > SUDDEN_DEATH_TIME) {
+                        isSuddenDeath = true;
+                        showMessage('SUDDEN DEATH');
+                        // Hide message after 2s, but mode stays active
+                        setTimeout(() => {
+                            if (gameState === 'playing') hideMessage();
+                        }, 2000); 
+                    }
+                }
             }
 
-            // --- NEW: Draw placeholder bikes on color select ---
             if (gameState === 'colorSelect') {
-                // We can't use player.draw() as it's not 'playing'
-                // But we can draw static representations
                 ctx.save();
                 ctx.fillStyle = colorPalette[p1ColorIndex];
                 ctx.shadowColor = colorPalette[p1ColorIndex];
@@ -546,7 +545,6 @@
             }
 
             for (let segment of trails) { segment.draw(); }
-            // Only draw players if actually playing
             if (gameState === 'playing') {
                 player1.draw();
                 player2.draw();
