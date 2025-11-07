@@ -207,7 +207,19 @@
         const arenas = [
             { name: "The Classic", mode: 'DEATHMATCH', obstacles: [], wrapWalls: false },
             { name: "The Pillars", mode: 'CTF MODE', obstacles: [ { x: 200, y: 100, width: 40, height: 200 }, { x: 400, y: 100, width: 40, height: 200 } ], wrapWalls: false },
-            { name: "The Arena", mode: 'ZONES', obstacles: [], wrapWalls: false } // NEW
+            { 
+              name: "The Gauntlet", 
+              mode: 'ZONES', 
+              obstacles: [
+                // The central block
+                { x: 270, y: 170, width: 100, height: 60 },
+                // Top-left bunker
+                { x: 150, y: 50, width: 40, height: 100 },
+                // Bottom-right bunker
+                { x: 450, y: 250, width: 40, height: 100 }
+              ], 
+              wrapWalls: false 
+            }
         ];
         
         function getArenaByMode(mode) {
@@ -958,7 +970,7 @@
             gameState = 'gameOver';
             
             let score1 = (gameMode === 'CTF MODE') ? p1RoundScore : player1.score;
-            let score2 = (gameMode === 'CTF MODE') ? p2RoundScore : player2.score;
+            let score2 = (gameMode ==="CTF MODE") ? p2RoundScore : player2.score;
 
             let message = '';
             if (gameMode === 'ZONES') {
