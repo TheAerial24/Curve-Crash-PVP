@@ -622,13 +622,23 @@
                 this.lifetime--; 
             }
             draw() {
-                const alpha = this.lifetime / TRAIL_LIFETIME;
+                // NEW: Use Math.sqrt for a non-linear fade (stays visible longer)
+                const alpha = Math.sqrt(this.lifetime / TRAIL_LIFETIME);
+                
+                // NEW: Add neon glow effect
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 15; // Glow amount
+
                 ctx.fillStyle = this.color; 
-                ctx.globalAlpha = alpha;
+                ctx.globalAlpha = alpha; // Fade out both the core and the glow
+                
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, TRAIL_WIDTH / 2, 0, Math.PI * 2);
                 ctx.fill();
+                
+                // NEW: Reset shadow and alpha so it doesn't affect other drawings
                 ctx.globalAlpha = 1.0;
+                ctx.shadowBlur = 0;
             }
         }
 
