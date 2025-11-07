@@ -153,6 +153,8 @@
         const ZONES_INTERVAL = 15 * FPS;       // 15 seconds
         const ZONES_START_RADIUS = 150;
         const ZONES_END_RADIUS = 30;
+        const ZONES_RESPAWN_TIME = 3 * FPS;      // 3 seconds
+        const ZONES_TRAIL_LIFETIME = 2 * FPS;    // 2 seconds
         // Total zones in a 5 min game (300s / 15s = 20)
         const ZONES_MAX_COUNT = (ZONES_GAME_TIME / ZONES_INTERVAL) - 1; 
 
@@ -263,14 +265,13 @@
 
             update() {
                 if (this.isDead) {
-                    if (gameMode === 'CTF MODE') {
+                    // All modes with respawn timers check here
+                    if (gameMode === 'CTF MODE' || gameMode === 'ZONES') {
                         this.respawnTimer--;
                         if (this.respawnTimer <= 0) {
                             this.respawn();
                         }
                     }
-                    // In ZONES mode, isDead = true just stops the update.
-                    // Respawn is handled by spawnNewZone()
                     return;
                 }
                 
@@ -297,10 +298,8 @@
                 const moveX = Math.cos(this.angle) * this.speed;
                 const moveY = Math.sin(this.angle) * this.speed;
                 
-                // Only create trails if not in Zones mode
-                if (gameMode !== 'ZONES') {
-                    trails.push(new TrailSegment(this.x, this.y, this.color));
-                }
+                // Trails are back on for all modes
+                trails.push(new TrailSegment(this.x, this.y, this.color));
 
                 this.x += moveX;
                 this.y += moveY;
@@ -389,17 +388,23 @@
 
             checkTrailCollision() {
                 if (this.immunityTimer > 0) return;
-                // No need to check trail collision in ZONES mode
-                if (gameMode === 'ZONES') return; 
                 
                 const playerRadius = PLAYER_SIZE / 2;
                 const trailRadius = TRAIL_WIDTH / 2;
                 const collisionThreshold = playerRadius + trailRadius;
 
                 for (let segment of trails) {
-                    if (segment.color === this.color && segment.lifetime > TRAIL_LIFETIME - 15) {
+                    
+                    // NEW: ZONES mode self-collision check
+                    if (gameMode === 'ZONES' && segment.color === this.color) {
+                        continue; // In ZONES, skip all self-trail checks
+                    }
+
+                    // Original self-collision check for other modes (grace period)
+                    if (gameMode !== 'ZONES' && segment.color === this.color && segment.lifetime > TRAIL_LIFETIME - 15) {
                         continue;
                     }
+                    
                     const dx = this.x - segment.x;
                     const dy = this.y - segment.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -428,6 +433,7 @@
                     handleDeathmatchRoundEnd(this.isP1 ? player2 : player1); 
                 } else if (gameMode === 'ZONES') {
                     this.score++; // Increment death count
+                    this.respawnTimer = ZONES_RESPAWN_TIME; // Set respawn timer
                     updateScoreUI(); // Update UI immediately
                 }
 
@@ -576,7 +582,7 @@
                 this.x = x;
                 this.y = y;
                 this.color = color; 
-                this.lifetime = TRAIL_LIFETIME; 
+                this.lifetime = TRAIL_LIFETIME; // This is set by startGame()
             }
             update() { 
                 this.lifetime--; 
@@ -773,7 +779,7 @@
             } else if (gameMode === 'DEATHMATCH') {
                 TRAIL_LIFETIME = DM_TRAIL_LIFETIME; 
             } else if (gameMode === 'ZONES') {
-                TRAIL_LIFETIME = 0; // No trails
+                TRAIL_LIFETIME = ZONES_TRAIL_LIFETIME; // Trails are on
                 zoneGameTimer = ZONES_GAME_TIME;
                 zoneTimer = 0; // Spawn first zone immediately
                 zoneCount = 0;
@@ -839,13 +845,7 @@
                 radius: newRadius
             };
 
-            // Respawn dead players
-            if (player1.isDead) {
-                player1.respawn();
-            }
-            if (player2.isDead) {
-                player2.respawn();
-            }
+            // Player respawn is now handled by their own respawn timer
         }
 
         function handleZonesLogic() {
